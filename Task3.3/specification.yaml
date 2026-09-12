@@ -1,0 +1,492 @@
+openapi: 3.2.0
+
+info:
+  title: Здоровье+ Patient API
+  version: 1.0.0
+  description: |
+    API мобильного приложения «Здоровье+» для пациентов.
+
+    Фрагмент описывает эндпойнт получения списка записей пациента к врачу.
+
+    Аутентификация: токен доступа (JWT), выданный Identity Provider.
+    Идентификатор пациента берётся из токена, поэтому пациент получает
+    только свои записи и не может запросить чужие.
+
+    Политика устаревания: каждая предыдущая мажорная версия API
+    поддерживается в течение шести месяцев с даты выпуска новой.
+    Версия 1.0.0 поддерживается до 2027-03-01.
+  contact:
+    name: Команда интеграций «Здоровье+»
+    email: api@zdorovie-plus.ru
+
+servers:
+  - url: https://api.zdorovie-plus.ru/api/v1
+    description: Промышленная среда
+  - url: https://api-stage.zdorovie-plus.ru/api/v1
+    description: Тестовая среда
+
+tags:
+  - name: Appointments
+    summary: Записи к врачу
+    description: Просмотр и управление записями пациента к врачу
+
+security:
+  - bearerAuth: []
+
+paths:
+  /appointments:
+    get:
+      operationId: listAppointments
+      summary: Получить список записей пациента к врачу
+      description: |
+        Возвращает записи пациента, определённого токеном доступа.
+        По умолчанию возвращаются предстоящие записи, отсортированные
+        по времени начала приёма по возрастанию.
+      tags:
+        - Appointments
+      parameters:
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Список записей пациента
+          headers:
+            X-Trace-Id:
+              description: Идентификатор трассировки запроса
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentListResponse'
+              examples:
+                upcoming:
+                  summary: Две предстоящие записи, одна из них с забором анализов
+                  value:
+                    items:
+                      - id: apt_8f2c41a9
+                        status: upcoming
+                        startsAt: '2026-09-16T10:30:00+03:00'
+                        endsAt: '2026-09-16T11:00:00+03:00'
+                        service:
+                          code: cardio_primary
+                          name: Первичный приём кардиолога
+                        doctor:
+                          id: doc_1042
+                          name: Смирнова Анна Петровна
+                          speciality: Кардиолог
+                        clinic:
+                          id: cl_msk_01
+                          name: Здоровье+ на Тверской
+                          address: Москва, ул. Тверская, 18
+                        payment:
+                          status: paid
+                          method: dms
+                          amount: 0
+                          currency: RUB
+                        labBooking:
+                          id: lab_5521
+                          status: confirmed
+                          startsAt: '2026-09-16T09:45:00+03:00'
+                          tests:
+                            - Общий анализ крови
+                            - Липидный профиль
+                        canBeCancelledUntil: '2026-09-15T10:30:00+03:00'
+                      - id: apt_3b71de04
+                        status: upcoming
+                        startsAt: '2026-09-24T14:00:00+03:00'
+                        endsAt: '2026-09-24T14:30:00+03:00'
+                        service:
+                          code: therapist_repeat
+                          name: Повторный приём терапевта
+                        doctor:
+                          id: doc_2087
+                          name: Ковалёв Игорь Сергеевич
+                          speciality: Терапевт
+                        clinic:
+                          id: cl_msk_02
+                          name: Здоровье+ на Профсоюзной
+                          address: Москва, ул. Профсоюзная, 42
+                        payment:
+                          status: paid
+                          method: card
+                          amount: 320000
+                          currency: RUB
+                        labBooking: null
+                        canBeCancelledUntil: '2026-09-23T14:00:00+03:00'
+                    pagination:
+                      total: 2
+                      limit: 20
+                      offset: 0
+                      next: null
+                      prev: null
+                empty:
+                  summary: Предстоящих записей нет
+                  value:
+                    items: []
+                    pagination:
+                      total: 0
+                      limit: 20
+                      offset: 0
+                      next: null
+                      prev: null
+        '401':
+          description: |
+            Токен доступа отсутствует, истёк или недействителен.
+            Приложению следует обновить токен и повторить запрос,
+            а при повторной ошибке направить пациента на экран входа.
+          headers:
+            WWW-Authenticate:
+              description: Схема аутентификации и причина отказа
+              schema:
+                type: string
+              example: 'Bearer error="invalid_token", error_description="Token expired"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                expiredToken:
+                  summary: Срок действия токена истёк
+                  value:
+                    code: UNAUTHORIZED
+                    message: Токен доступа истёк
+                    traceId: 7d3f1c0a9b4e42f0
+        '500':
+          description: |
+            Внутренняя ошибка сервиса. Запрос безопасно повторить
+            с экспоненциальной задержкой: операция не изменяет состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                internalError:
+                  summary: Сервис записи недоступен
+                  value:
+                    code: INTERNAL_ERROR
+                    message: Не удалось получить список записей, попробуйте позже
+                    traceId: 9a41bc7e25d3480f
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Токен доступа, выданный Identity Provider по протоколу OIDC.
+        Передаётся в заголовке Authorization: Bearer <token>.
+        Идентификатор пациента читается из поля sub токена.
+
+  parameters:
+
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      description: |
+        Фильтр по состоянию записи.
+        Несколько значений передаются повторением параметра:
+        `?status=upcoming&status=cancelled`.
+      schema:
+        type: array
+        items:
+          type: string
+          enum:
+            - upcoming
+            - completed
+            - cancelled
+        default:
+          - upcoming
+      example:
+        - upcoming
+
+    DateFrom:
+      name: date_from
+      in: query
+      required: false
+      description: Нижняя граница времени начала приёма, включительно
+      schema:
+        type: string
+        format: date-time
+      example: '2026-09-12T00:00:00+03:00'
+
+    DateTo:
+      name: date_to
+      in: query
+      required: false
+      description: Верхняя граница времени начала приёма, включительно
+      schema:
+        type: string
+        format: date-time
+      example: '2026-12-31T23:59:59+03:00'
+
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Количество записей на странице
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      example: 20
+
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: Количество записей, пропускаемых перед выдачей
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      example: 0
+
+  schemas:
+
+    AppointmentListResponse:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          description: Записи пациента, отсортированные по времени начала приёма
+          items:
+            $ref: '#/components/schemas/Appointment'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Appointment:
+      type: object
+      required:
+        - id
+        - status
+        - startsAt
+        - endsAt
+        - service
+        - doctor
+        - clinic
+        - payment
+      properties:
+        id:
+          type: string
+          description: Идентификатор записи
+          example: apt_8f2c41a9
+        status:
+          type: string
+          description: Состояние записи
+          enum:
+            - upcoming
+            - completed
+            - cancelled
+          example: upcoming
+        startsAt:
+          type: string
+          format: date-time
+          description: Время начала приёма с указанием часового пояса клиники
+          example: '2026-09-16T10:30:00+03:00'
+        endsAt:
+          type: string
+          format: date-time
+          description: Время окончания приёма
+          example: '2026-09-16T11:00:00+03:00'
+        service:
+          $ref: '#/components/schemas/Service'
+        doctor:
+          $ref: '#/components/schemas/Doctor'
+        clinic:
+          $ref: '#/components/schemas/Clinic'
+        payment:
+          $ref: '#/components/schemas/Payment'
+        labBooking:
+          description: |
+            Забронированное время забора биоматериала, если приём
+            сопровождается сдачей анализов. Null, если анализы не заказаны.
+          oneOf:
+            - $ref: '#/components/schemas/LabBooking'
+            - type: 'null'
+        canBeCancelledUntil:
+          type: string
+          format: date-time
+          description: Момент, до которого запись можно отменить без удержания
+          example: '2026-09-15T10:30:00+03:00'
+
+    Service:
+      type: object
+      required:
+        - code
+        - name
+      properties:
+        code:
+          type: string
+          description: Код услуги
+          example: cardio_primary
+        name:
+          type: string
+          description: Наименование услуги
+          example: Первичный приём кардиолога
+
+    Doctor:
+      type: object
+      required:
+        - id
+        - name
+        - speciality
+      properties:
+        id:
+          type: string
+          example: doc_1042
+        name:
+          type: string
+          example: Смирнова Анна Петровна
+        speciality:
+          type: string
+          example: Кардиолог
+
+    Clinic:
+      type: object
+      required:
+        - id
+        - name
+        - address
+      properties:
+        id:
+          type: string
+          example: cl_msk_01
+        name:
+          type: string
+          example: Здоровье+ на Тверской
+        address:
+          type: string
+          example: Москва, ул. Тверская, 18
+
+    Payment:
+      type: object
+      required:
+        - status
+        - method
+        - amount
+        - currency
+      properties:
+        status:
+          type: string
+          description: Состояние оплаты записи
+          enum:
+            - not_required
+            - pending
+            - paid
+            - refunded
+          example: paid
+        method:
+          type: string
+          description: Способ оплаты
+          enum:
+            - dms
+            - card
+          example: card
+        amount:
+          type: integer
+          description: Сумма в копейках. Для записей по ДМС равна нулю
+          minimum: 0
+          example: 320000
+        currency:
+          type: string
+          description: Валюта в формате ISO 4217
+          example: RUB
+
+    LabBooking:
+      type: object
+      required:
+        - id
+        - status
+        - startsAt
+        - tests
+      properties:
+        id:
+          type: string
+          description: Идентификатор резерва времени забора биоматериала
+          example: lab_5521
+        status:
+          type: string
+          enum:
+            - reserved
+            - confirmed
+            - cancelled
+          example: confirmed
+        startsAt:
+          type: string
+          format: date-time
+          description: Время начала окна забора биоматериала
+          example: '2026-09-16T09:45:00+03:00'
+        tests:
+          type: array
+          description: Состав назначенных исследований
+          items:
+            type: string
+          example:
+            - Общий анализ крови
+            - Липидный профиль
+
+    Pagination:
+      type: object
+      required:
+        - total
+        - limit
+        - offset
+      properties:
+        total:
+          type: integer
+          description: Общее количество записей, удовлетворяющих фильтру
+          example: 2
+        limit:
+          type: integer
+          description: Применённый размер страницы
+          example: 20
+        offset:
+          type: integer
+          description: Применённое смещение
+          example: 0
+        next:
+          description: Ссылка на следующую страницу. Null, если страница последняя
+          oneOf:
+            - type: string
+              format: uri
+            - type: 'null'
+        prev:
+          description: Ссылка на предыдущую страницу. Null, если страница первая
+          oneOf:
+            - type: string
+              format: uri
+            - type: 'null'
+
+    Error:
+      type: object
+      description: Единый формат ошибки для всех эндпойнтов API
+      required:
+        - code
+        - message
+        - traceId
+      properties:
+        code:
+          type: string
+          description: Машиночитаемый код ошибки
+          example: UNAUTHORIZED
+        message:
+          type: string
+          description: Описание ошибки, пригодное для показа пациенту
+          example: Токен доступа истёк
+        traceId:
+          type: string
+          description: |
+            Идентификатор трассировки. Сообщается в обращении в поддержку
+            и позволяет найти запрос в платформе наблюдаемости
+          example: 7d3f1c0a9b4e42f0
